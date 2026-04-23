@@ -279,7 +279,7 @@ public:
         }
 
         frozen = false;
-        printScoreboard(getCurrentRanking());
+        printScoreboard(before_ranking);
     }
 
     void queryRanking(const string& team_name) {
