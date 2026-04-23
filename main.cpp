@@ -327,7 +327,15 @@ private:
     }
 
     void updateRankings() {
-        sort(team_list.begin(), team_list.end(), CompareTeams());
+        // Check if this is before the first flush
+        if (flush_count == 0) {
+            // Sort by team name lexicographically
+            sort(team_list.begin(), team_list.end(), [](Team* a, Team* b) {
+                return a->name < b->name;
+            });
+        } else {
+            sort(team_list.begin(), team_list.end(), CompareTeams());
+        }
 
         for (int i = 0; i < team_list.size(); i++) {
             team_list[i]->rank = i + 1;
