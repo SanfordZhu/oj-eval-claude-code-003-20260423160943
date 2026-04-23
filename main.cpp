@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <sstream>
 #include <cstring>
+#include <unordered_map>
 
 using namespace std;
 
@@ -65,7 +66,7 @@ struct CompareTeams {
 
 class ICPMSystem {
 private:
-    map<string, Team*> teams;
+    unordered_map<string, Team*> teams;
     vector<Team*> team_list;
     vector<Submission> submissions;
     bool competition_started;
@@ -95,7 +96,7 @@ public:
             return;
         }
 
-        Team* team = new Team(team_name, 26);
+        Team* team = new Team(team_name, 0);
         teams[team_name] = team;
         team_list.push_back(team);
         cout << "[Info]Add successfully.\n";
@@ -110,6 +111,12 @@ public:
         competition_started = true;
         duration_time = duration;
         problem_count = problems;
+
+        // Resize problem vectors for all teams
+        for (Team* team : team_list) {
+            team->problems.resize(problem_count);
+        }
+
         cout << "[Info]Competition starts.\n";
     }
 
@@ -146,6 +153,7 @@ public:
         team->total_solved = 0;
         team->total_penalty = 0;
         team->solve_times.clear();
+        team->solve_times.reserve(problem_count);
 
         for (int i = 0; i < problem_count; i++) {
             if (team->problems[i].is_solved && !team->problems[i].is_frozen) {
@@ -193,88 +201,54 @@ public:
         vector<Team*> before_ranking = getCurrentRanking();
         printScoreboard(before_ranking);
 
-        vector<pair<Team*, int>> teams_with_frozen;
-        for (Team* team : team_list) {
-            for (int i = 0; i < problem_count; i++) {
-                if (team->problems[i].is_frozen) {
-                    teams_with_frozen.push_back({team, i});
+        // Collect all frozen problems and sort them efficiently
+        vector<pair<int, pair<Team*, int>>> frozen_problems; // (rank, (team, problem))
+
+        for (int i = 0; i < before_ranking.size(); i++) {
+            Team* team = before_ranking[i];
+            for (int j = 0; j < problem_count; j++) {
+                if (team->problems[j].is_frozen) {
+                    frozen_problems.push_back({i, {team, j}});
                 }
             }
         }
 
-        while (!teams_with_frozen.empty()) {
-            Team* lowest_team = nullptr;
-            int lowest_problem = -1;
-            int lowest_rank = -1;
+        // Sort by rank (descending) then by problem index (ascending)
+        sort(frozen_problems.begin(), frozen_problems.end(),
+             [](const auto& a, const auto& b) {
+                 if (a.first != b.first) return a.first > b.first;
+                 return a.second.second < b.second.second;
+             });
 
-            for (auto& [team, prob] : teams_with_frozen) {
-                int rank = 0;
-                for (int i = 0; i < before_ranking.size(); i++) {
-                    if (before_ranking[i] == team) {
-                        rank = i;
-                        break;
-                    }
-                }
+        // Process each frozen problem
+        for (auto& item : frozen_problems) {
+            Team* team = item.second.first;
+            int problem_idx = item.second.second;
 
-                if (lowest_rank == -1 || rank > lowest_rank ||
-                    (rank == lowest_rank && prob < lowest_problem)) {
-                    lowest_rank = rank;
-                    lowest_team = team;
-                    lowest_problem = prob;
-                }
-            }
+            if (!team->problems[problem_idx].is_frozen) continue;
 
-            if (!lowest_team) break;
-
-            lowest_team->problems[lowest_problem].is_frozen = false;
+            team->problems[problem_idx].is_frozen = false;
 
             // Check if this problem was actually solved (after freeze)
-            if (lowest_team->problems[lowest_problem].is_solved) {
-                updateTeamScore(lowest_team);
+            if (team->problems[problem_idx].is_solved) {
+                updateTeamScore(team);
 
                 vector<Team*> after_ranking = getCurrentRanking();
 
                 int old_pos = 0, new_pos = 0;
                 for (int i = 0; i < before_ranking.size(); i++) {
-                    if (before_ranking[i] == lowest_team) old_pos = i;
-                    if (after_ranking[i] == lowest_team) new_pos = i;
+                    if (before_ranking[i] == team) old_pos = i;
+                    if (after_ranking[i] == team) new_pos = i;
                 }
 
                 if (old_pos != new_pos) {
-                    cout << lowest_team->name << " "
+                    cout << team->name << " "
                          << before_ranking[new_pos]->name << " "
-                         << lowest_team->total_solved << " "
-                         << lowest_team->total_penalty << "\n";
+                         << team->total_solved << " "
+                         << team->total_penalty << "\n";
                 }
 
                 before_ranking = after_ranking;
-            }
-
-            updateTeamScore(lowest_team);
-            vector<Team*> after_ranking = getCurrentRanking();
-
-            int old_pos = 0, new_pos = 0;
-            for (int i = 0; i < before_ranking.size(); i++) {
-                if (before_ranking[i] == lowest_team) old_pos = i;
-                if (after_ranking[i] == lowest_team) new_pos = i;
-            }
-
-            if (old_pos != new_pos) {
-                cout << lowest_team->name << " "
-                     << before_ranking[new_pos]->name << " "
-                     << lowest_team->total_solved << " "
-                     << lowest_team->total_penalty << "\n";
-            }
-
-            before_ranking = after_ranking;
-
-            teams_with_frozen.clear();
-            for (Team* team : team_list) {
-                for (int i = 0; i < problem_count; i++) {
-                    if (team->problems[i].is_frozen) {
-                        teams_with_frozen.push_back({team, i});
-                    }
-                }
             }
         }
 
